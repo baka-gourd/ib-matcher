@@ -6,6 +6,7 @@ members = [
     # "ib-pinyin/bindings/diplomat"
     "ib-romaji",
     "ib-unicode",
+    "ib-bridge/rust"
 ]
 resolver = "3"
 

@@ -3,3 +3,6 @@ private/
 *.private.*
 
 /target
+
+/ib-bridge/csharp/bin
+/ib-bridge/csharp/obj
