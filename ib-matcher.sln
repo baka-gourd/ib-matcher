@@ -1,0 +1,32 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ib-bridge", "ib-bridge", "{E2366B23-8ADE-4EFC-A5B3-76A8116A14C8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "csharp", "csharp", "{E42C62AB-F5F8-FBAB-7D5A-BEFA8FC327DF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IbBridge", "ib-bridge\csharp\IbBridge\IbBridge.csproj", "{D6AC5A98-8E6F-F6D7-6879-C229A0A199C1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D6AC5A98-8E6F-F6D7-6879-C229A0A199C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D6AC5A98-8E6F-F6D7-6879-C229A0A199C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D6AC5A98-8E6F-F6D7-6879-C229A0A199C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D6AC5A98-8E6F-F6D7-6879-C229A0A199C1}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{E42C62AB-F5F8-FBAB-7D5A-BEFA8FC327DF} = {E2366B23-8ADE-4EFC-A5B3-76A8116A14C8}
+		{D6AC5A98-8E6F-F6D7-6879-C229A0A199C1} = {E42C62AB-F5F8-FBAB-7D5A-BEFA8FC327DF}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {DD9CC642-7F25-4BD6-BC3C-58636EB89029}
+	EndGlobalSection
+EndGlobal

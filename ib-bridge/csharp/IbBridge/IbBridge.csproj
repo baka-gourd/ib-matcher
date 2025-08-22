@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>net48;net6.0;net7.0;net8.0</TargetFrameworks>
+        <LangVersion>8.0</LangVersion>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <Nullable>enable</Nullable>
+        <AssemblyName>IbBridge</AssemblyName>
+        <RootNamespace>IbBridge</RootNamespace>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <Authors>IB</Authors>
+        <Description>C# bindings for ib-matcher - a multilingual and fast string matcher, supporting Chinese pinyin and Japanese romaji matching</Description>
+        <PackageId>IbBridge</PackageId>
+        <Version>0.1.0</Version>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+        <DefineConstants>DEBUG;TRACE</DefineConstants>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+        <DefineConstants>TRACE</DefineConstants>
+        <Optimize>true</Optimize>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="$(MSBuildThisFileDirectory)..\..\..\target\release\ib_bridge.dll">
+            <Link>runtimes\win-x64\native\ib_bridge.dll</Link>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+
+    <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+        <Reference Include="System" />
+        <Reference Include="System.Core" />
+    </ItemGroup>
+
+</Project>

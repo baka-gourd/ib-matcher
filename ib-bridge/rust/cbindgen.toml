@@ -1,0 +1,47 @@
+language = "C"
+header = """
+/* 
+ * IB-Bridge - C binding for ib-matcher
+ * Auto-generated header file. Do not edit!
+ */
+"""
+
+include_guard = "IB_BRIDGE_H"
+include_version = true
+namespaces = []
+documentation = true
+documentation_style = "auto"
+line_length = 100
+tab_width = 4
+style = "tag"
+
+[defines]
+"target_os = windows" = "IB_BRIDGE_WINDOWS"
+"target_os = macos" = "IB_BRIDGE_MACOS"
+"target_os = linux" = "IB_BRIDGE_LINUX"
+
+[export]
+include = []
+exclude = []
+prefix = "IB_"
+item_types = []
+renaming_overrides_prefixing = false
+
+[export.rename]
+
+[export.body]
+
+[parse]
+parse_deps = false
+include = []
+exclude = []
+clean = false
+
+# Handle opaque types
+[const]
+allow_static_const = false
+allow_constexpr = false
+
+# Define IbMatcherHandle as an opaque struct
+[export.opaque]
+"IbMatcherHandle" = "struct IbMatcherHandle_"

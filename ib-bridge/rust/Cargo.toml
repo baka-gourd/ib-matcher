@@ -1,0 +1,22 @@
+[package]
+name = "ib-bridge"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[lib]
+name = "ib_matcher"
+crate-type = ["cdylib"]
+
+[dependencies]
+ib-matcher = { path = "../../ib-matcher", features = ["pinyin", "romaji"] }
+widestring = "1.0"
+libc = "0.2"
+
+[build-dependencies]
+cbindgen = "0.24"
+
+[features]
+default = ["pinyin", "romaji"]
+pinyin = []
+romaji = []

@@ -4,5 +4,7 @@ private/
 
 /target
 
-/ib-bridge/csharp/bin
-/ib-bridge/csharp/obj
+.vscode/*
+build/
+ib-bridge/csharp/IbBridge/bin
+ib-bridge/csharp/IbBridge/obj
