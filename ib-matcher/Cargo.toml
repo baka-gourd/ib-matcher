@@ -1,10 +1,10 @@
 [package]
 name = "ib-matcher"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.75"
-description = "A multilingual and fast string matcher, supports 拼音匹配 (Chinese pinyin match) and ローマ字検索 (Japanese romaji match)"
-keywords = ["matcher", "cjk", "pinyin", "romaji"]
+description = "A multilingual, flexible and fast string, glob and regex matcher. Support 拼音匹配 (Chinese pinyin match) and ローマ字検索 (Japanese romaji match)."
+keywords = ["unicode", "cjk", "romaji", "glob", "regex"]
 authors.workspace = true
 homepage.workspace = true
 repository.workspace = true
@@ -13,28 +13,103 @@ license.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["perf"]
+#! Most used feature combinations:
+#! - Languages: `pinyin,romaji`
+#! - [glob](syntax::glob): `syntax-glob,regex`
+#! - Regex: `regex`
+#! - Regex with [custom matching callbacks](regex::cp::Regex#custom-matching-callbacks): `regex-callback`
+#! 
+#! Features:
+default = ["std", "unicode", "perf", "romaji-compress-words"]
+## 
+## - For [`regex`]:
+## When enabled, this will cause `regex` to use the standard library. In terms
+## of APIs, `std` causes error types to implement the `std::error::Error`
+## trait. Enabling `std` will also result in performance optimizations,
+## including SIMD and faster synchronization primitives. Notably, **disabling
+## the `std` feature will result in the use of spin locks**. To use a regex
+## engine without `std` and without spin locks, you'll need to drop down to
+## use APIs that accept a `Cache` value explicitly.
+std = ["regex-automata?/std", "regex-syntax?/std", "logos?/std", "alloc"]
+## Enables use of the `alloc` library. This is required for most
+## APIs in this crate.
+alloc = ["regex-automata?/alloc"]
 
+#! ### Languages
+## Unicode support.
+unicode = ["ib-unicode/case-fold", "regex-unicode"]
 ## Chinese pinyin match support.
 pinyin = ["dep:arraystring", "dep:bitflags"]
 ## Japanese romaji match support.
 ##
-## The dictionary will take ~5.5 MiB in the binary at the moment, much larger than pinyin's.
+## The dictionary will take ~4.8 MiB (5.5 MiB without compression) in the binary at the moment, much larger than pinyin's.
 romaji = ["dep:ib-romaji"]
+## Binary size (and memory usage) -696 KiB (771 KiB if zstd is already used), romanizer build time +1.1 ms.
+romaji-compress-words = ["ib-romaji?/compress-words"]
 
-## Pattern syntax support. See [`syntax`] for details.
-syntax = []
+#! ### Syntax
+## Pattern syntax support. Equivalent to features `syntax-glob,syntax-ev`. See [`syntax`] for details.
+syntax = ["syntax-glob", "syntax-ev"]
+## glob()-style pattern matching syntax support. See [`syntax::glob`] for details.
+syntax-glob = ["dep:logos", "syntax-regex"]
+## Support for the syntax used by [IbEverythingExt](https://github.com/Chaoses-Ib/IbEverythingExt). See [`syntax::ev`] for details.
+syntax-ev = []
+## Enables a dependency on `regex-syntax`. This makes APIs
+## for building regex engines from pattern strings available. Without the
+## `regex-syntax` dependency, the only way to build a regex engine is generally
+## to deserialize a previously built DFA or to hand assemble an NFA using its
+## [builder API](regex::nfa::thompson::Builder). Once you have an NFA, you can build any
+## of the regex engines in this crate. The `syntax` feature also enables `alloc`.
+##
+## See [`syntax::regex`] for details.
+syntax-regex = ["dep:regex-syntax", "regex-automata?/syntax", "alloc"]
 
+#! ### Regular expression engines
+## Regular expression support. See [`regex`] for details.
+## 
+## Include all regex features except `regex-unicode` (enabled by default) and `regex-callback`.
+regex = ["regex-cp", "regex-lita", "syntax-regex"]
+## Regex engine types.
+regex-automata = ["dep:regex-automata"]
+## Regex NFA engines.
+regex-nfa = ["regex-automata", "regex-automata/nfa-thompson", "alloc"]
+## Enables [`regex::cp`] engine. Include features `regex-nfa,syntax-regex`.
+regex-cp = ["regex-nfa", "syntax-regex"]
+## Regex with [custom matching callbacks](regex::cp::Regex#custom-matching-callbacks).
+regex-callback = ["regex-cp"]
+## Enables [`regex::lita`] engine. Include features `regex-cp`.
+regex-lita = [
+    "regex-cp",
+    "regex-automata/dfa-build",
+    "regex-automata/dfa-search",
+]
+## Enables all regex Unicode features. This feature is enabled by default, and will
+## always cover all Unicode features, even if more are added in the future.
+regex-unicode = ["regex-automata?/unicode", "regex-syntax?/unicode"]
+
+#! ### Performance
 ## Enables all performance related features. This feature is enabled by default is intended to cover all reasonable features that improve performance, even if more are added in the future.
-perf = ["perf-unicode-case-map"]
-## -37% match time, +38 KiB
-perf-unicode-case-map = ["ib-unicode/perf-unicode-case-map"]
+perf = ["perf-inline", "perf-literal", "perf-unicode"]
+## Enables aggressive use of inlining.
+## 
+## When enabled, `inline(always)` is used in (many) strategic locations to help performance at the expense of longer compile times and increased binary size.
+perf-inline = ["regex-automata?/perf-inline"]
+## Enables all literal related optimizations.
+perf-literal = ["perf-literal-substring"]
+## Enables all single substring literal optimizations. This includes adding a dependency on the `memchr` crate.
+perf-literal-substring = ["ib-unicode/perf-ascii"]
+## Unicode and ASCII related optimizations.
+perf-unicode = ["ib-unicode/perf-ascii", "ib-unicode/perf-case-fold"]
+# ## -37% match time, +38 KiB
+# perf-unicode-case-map = ["ib-unicode/perf-case-map"]
 
+perf-plain-ac = []
 ## Not used at the moment.
 ## 
 ## Build size +837.5 KiB
-regex = ["dep:regex"]
+perf-plain-regex = ["dep:regex"]
 
+#! ### FFI
 ## Make [`pinyin::PinyinData`] interior mutable. So it can be easily used as a `static` variable.
 inmut-data = []
 ## Minimal APIs that can be used in one call. See [`minimal`] for details.
@@ -52,29 +127,67 @@ arraystring = { version = "0.3", optional = true }
 bitflags = { version = "2", optional = true }
 bon = "3"
 document-features = { version = "0.2", optional = true }
-ib-romaji = { version = "0.1.1", optional = true, path = "../ib-romaji" }
-ib-unicode = { version = "0.1", path = "../ib-unicode" }
+ib-romaji = { version = "0.1.1", default-features = false, optional = true, path = "../ib-romaji" }
+ib-unicode = { version = "0.2", default-features = false, path = "../ib-unicode" }
 itertools = "0.14"
+logos = { version = "0.15", default-features = false, features = [
+    "export_derive",
+], optional = true }
 # TODO: perf-dfa-full
 regex = { version = "1.10.2", default-features = false, features = [
     "std",
     "perf",
 ], optional = true }
+regex-automata = { version = "0.4", default-features = false, optional = true }
+regex-syntax = { version = "0.8", default-features = false, optional = true }
 widestring = { version = "1.0.2", optional = true }
 
 [dev-dependencies]
 criterion = "0.6"
 daachorse = "1"
-ib-matcher = { features = ["pinyin", "romaji", "syntax"], path = "." }
+regex-automata = { version = "0.4", default-features = false, features = [
+    # To make doctest in `regex::backtrack` happy
+    "nfa-backtrack",
+    "perf-literal-multisubstring",
+    # Bench
+    "dfa",
+    "hybrid",
+    "perf-literal",
+] }
+ib-matcher = { features = [
+    "pinyin",
+    "romaji",
+    "syntax",
+    "regex",
+    "regex-callback",
+], path = "." }
 
 [[bench]]
 name = "matcher"
 harness = false
 
 [[bench]]
-name = "regex"
+name = "ascii"
 harness = false
-# cargo bench --bench regex --features regex
+
+[[bench]]
+name = "analyze"
+harness = false
+
+[[bench]]
+name = "regex_ascii"
+path = "benches/regex/ascii.rs"
+harness = false
+
+[[bench]]
+name = "regex_cp"
+path = "benches/regex/cp.rs"
+harness = false
+
+[[bench]]
+name = "regex_lita"
+path = "benches/regex/lita.rs"
+harness = false
 
 [package.metadata.docs.rs]
 # We want to document all features.

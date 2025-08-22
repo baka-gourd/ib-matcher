@@ -31,3 +31,19 @@ where
         }
     }
 }
+
+#[cfg(feature = "regex-automata")]
+impl<'h> Input<'h, str> {
+    /// Note that:
+    /// - `span` can limit the range, but the retuened [`Match`](super::Match) from [`IbMatcher`](super::IbMatcher) will start from `span.start`. You need to call [`m.offset(input.start())`](super::Match::offset) manually if the offsets matter in your case.
+    /// - `anchored` and `earliest` will be ignored.
+    #[inline]
+    pub fn from_regex(input: &crate::regex::Input<'h>) -> Self {
+        let haystack = &input.haystack()[input.get_span()];
+        debug_assert!(str::from_utf8(haystack).is_ok());
+        Input {
+            haystack: unsafe { std::mem::transmute(str::from_utf8_unchecked(haystack)) },
+            no_start: input.start() != 0,
+        }
+    }
+}

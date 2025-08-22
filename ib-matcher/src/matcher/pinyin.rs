@@ -40,6 +40,12 @@ pub struct PinyinMatchConfig<'a> {
     pub(crate) allow_partial_pattern: bool,
 }
 
+impl Default for PinyinMatchConfig<'_> {
+    fn default() -> Self {
+        Self::notations(PinyinNotation::Ascii | PinyinNotation::AsciiFirstLetter)
+    }
+}
+
 impl<'a> PinyinMatchConfig<'a> {
     /// Use [`PinyinMatchConfigBuilder`] for more options.
     pub fn notations(notations: PinyinNotation) -> Self {
@@ -151,6 +157,8 @@ impl<'a> PinyinMatcher<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::{assert_match, matcher::IbMatcher};
+
     use super::*;
 
     #[test]
@@ -159,5 +167,36 @@ mod tests {
             PinyinNotation::all().iter().count(),
             PinyinMatcher::ORDERED_PINYIN_NOTATIONS.len()
         )
+    }
+
+    #[test]
+    fn diletter() {
+        // rs tw he ne nt er fo ld er
+        let m = IbMatcher::builder("Event.SelectFirstWhenEnterFolder.js")
+            .pinyin(PinyinMatchConfig::notations(PinyinNotation::DiletterXiaohe))
+            .analyze(true)
+            .build();
+        assert_match!(m.test("Event.SelectFirstWhenEnterFolder.js"), Some((0, 35)));
+
+        let m = IbMatcher::builder("Event.SelectFirstWhenEnterFolder.js")
+            .pinyin(PinyinMatchConfig::notations(
+                PinyinNotation::Ascii
+                    | PinyinNotation::AsciiFirstLetter
+                    | PinyinNotation::DiletterXiaohe,
+            ))
+            .analyze(true)
+            .build();
+        assert_match!(m.test("Event.SelectFirstWhenEnterFolder.js"), Some((0, 35)));
+
+        let m = IbMatcher::builder("Event.SelectFirstWhenEnterFolder.js")
+            .is_pattern_partial(true)
+            .pinyin(PinyinMatchConfig::notations(
+                PinyinNotation::Ascii
+                    | PinyinNotation::AsciiFirstLetter
+                    | PinyinNotation::DiletterXiaohe,
+            ))
+            .analyze(true)
+            .build();
+        assert_match!(m.test("Event.SelectFirstWhenEnterFolder.js"), Some((0, 35)));
     }
 }

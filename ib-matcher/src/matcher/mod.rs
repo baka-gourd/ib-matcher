@@ -1,6 +1,38 @@
-use std::marker::PhantomData;
+/*!
+The Ib matcher. See [`IbMatcher`].
 
-use bon::bon;
+## Example
+```
+// cargo add ib-matcher --features pinyin,romaji
+use ib_matcher::{
+    matcher::{IbMatcher, PinyinMatchConfig, RomajiMatchConfig},
+    pinyin::PinyinNotation,
+};
+
+let matcher = IbMatcher::builder("la vie est drôle").build();
+assert!(matcher.is_match("LA VIE EST DRÔLE"));
+
+let matcher = IbMatcher::builder("βίος").build();
+assert!(matcher.is_match("Βίοσ"));
+assert!(matcher.is_match("ΒΊΟΣ"));
+
+let matcher = IbMatcher::builder("pysousuoeve")
+    .pinyin(PinyinMatchConfig::notations(
+        PinyinNotation::Ascii | PinyinNotation::AsciiFirstLetter,
+    ))
+    .build();
+assert!(matcher.is_match("拼音搜索Everything"));
+
+let matcher = IbMatcher::builder("konosuba")
+    .romaji(RomajiMatchConfig::default())
+    .is_pattern_partial(true)
+    .build();
+assert!(matcher.is_match("この素晴らしい世界に祝福を"));
+```
+*/
+use std::{fmt::Debug, marker::PhantomData};
+
+use bon::{bon, Builder};
 
 use crate::{
     matcher::{
@@ -10,15 +42,16 @@ use crate::{
         matches::SubMatch,
         pattern::{LangOnly, Pattern},
     },
-    unicode::{CharToMonoLowercase, StrToMonoLowercase},
+    unicode::case::{CharCaseExt, StrCaseExt},
 };
 
 pub mod analyze;
+pub(crate) mod config;
 pub mod encoding;
 pub mod input;
 mod matches;
 pub mod pattern;
-#[cfg(feature = "regex")]
+#[cfg(feature = "perf-plain-regex")]
 mod regex_utils;
 
 mod ascii;
@@ -34,6 +67,71 @@ pub use pinyin::*;
 #[cfg(feature = "romaji")]
 pub use romaji::*;
 
+#[derive(Builder)]
+pub struct MatchConfig<'a> {
+    /// For more advanced control over the analysis, use [`MatchConfigBuilder::analyze_config`].
+    #[builder(default = false)]
+    analyze: bool,
+    analyze_config: Option<analyze::PatternAnalyzeConfig>,
+
+    /// If `true`, the pattern can match pinyins/romajis starting with the ending of the pattern.
+    ///
+    /// For example, pattern "pinyi" can match "拼音" (whose pinyin is "pinyin") if `is_pattern_partial` is `true`.
+    #[builder(default = false)]
+    is_pattern_partial: bool,
+
+    /// Only matches if the haystack starts with the pattern.
+    #[builder(default = false)]
+    pub(crate) starts_with: bool,
+    /// Only matches if the haystack ends with the pattern.
+    #[builder(default = false)]
+    ends_with: bool,
+
+    /// `None` means not to match characters in the pattern as plain characters, i.e. match them only as pinyin/romaji, even if they are not valid pinyin/romaji characters.
+    ///
+    /// Note empty pattern always match everything.
+    #[builder(required, default = Some(PlainMatchConfig::builder().build()))]
+    pub(crate) plain: Option<PlainMatchConfig>,
+    /// Allow to match a haystack with mixed languages, i.e. pinyin and romaji, at the same time.
+    ///
+    /// `true` may lead to unexpected matches, especially if [`PinyinNotation::AsciiFirstLetter`] is enabled, and also lower performance.
+    #[builder(default = false)]
+    mix_lang: bool,
+    #[cfg(feature = "pinyin")]
+    pinyin: Option<PinyinMatchConfig<'a>>,
+    #[cfg(feature = "romaji")]
+    romaji: Option<RomajiMatchConfig<'a>>,
+    #[cfg(not(any(feature = "pinyin", feature = "romaji")))]
+    #[builder(skip)]
+    _data: PhantomData<&'a ()>,
+}
+
+impl Default for MatchConfig<'_> {
+    fn default() -> Self {
+        Self::builder().build()
+    }
+}
+
+impl<'a> MatchConfig<'a> {
+    pub fn shallow_clone(&'a self) -> Self {
+        Self {
+            analyze: self.analyze,
+            analyze_config: self.analyze_config.clone(),
+            is_pattern_partial: self.is_pattern_partial,
+            starts_with: self.starts_with,
+            ends_with: self.ends_with,
+            plain: self.plain.clone(),
+            mix_lang: self.mix_lang,
+            #[cfg(feature = "pinyin")]
+            pinyin: self.pinyin.as_ref().map(|c| c.shallow_clone()),
+            #[cfg(feature = "romaji")]
+            romaji: self.romaji.as_ref().map(|c| c.shallow_clone()),
+            #[cfg(not(any(feature = "pinyin", feature = "romaji")))]
+            _data: PhantomData,
+        }
+    }
+}
+
 struct PatternChar<'a> {
     c: char,
     c_lowercase: char,
@@ -41,12 +139,43 @@ struct PatternChar<'a> {
     s_lowercase: &'a str,
 }
 
+/**
+## Example
+```
+// cargo add ib-matcher --features pinyin,romaji
+use ib_matcher::{
+    matcher::{IbMatcher, PinyinMatchConfig, RomajiMatchConfig},
+    pinyin::PinyinNotation,
+};
+
+let matcher = IbMatcher::builder("la vie est drôle").build();
+assert!(matcher.is_match("LA VIE EST DRÔLE"));
+
+let matcher = IbMatcher::builder("βίος").build();
+assert!(matcher.is_match("Βίοσ"));
+assert!(matcher.is_match("ΒΊΟΣ"));
+
+let matcher = IbMatcher::builder("pysousuoeve")
+    .pinyin(PinyinMatchConfig::notations(
+        PinyinNotation::Ascii | PinyinNotation::AsciiFirstLetter,
+    ))
+    .build();
+assert!(matcher.is_match("拼音搜索Everything"));
+
+let matcher = IbMatcher::builder("konosuba")
+    .romaji(RomajiMatchConfig::default())
+    .is_pattern_partial(true)
+    .build();
+assert!(matcher.is_match("この素晴らしい世界に祝福を"));
+```
+*/
 /// ## Design
 /// API follows [`regex::Regex`](https://docs.rs/regex/latest/regex/struct.Regex.html).
 ///
 /// ## Performance
-/// - If you need to build [`IbMatcher`] multiple times, pass [`PinyinMatchConfigBuilder::data`] to the builder to avoid re-initializing the pinyin data every time.
+/// - If you need to build [`IbMatcher`] multiple times, pass [`PinyinMatchConfigBuilder::data`] to the builder or use [`PinyinMatchConfig::shallow_clone()`] to avoid re-initializing the pinyin data every time. Same for [`RomajiMatchConfig`].
 /// - For matching more than 1000 strings, enable [`IbMatcherBuilder::analyze`] to optimize the pattern further. (The analysis costs ~65us, equivalent to about 220~1100 matches.)
+/// - If you only need to call [`IbMatcher::test`] (or [`IbMatcher::test_and_try_for_each`]), set `starts_with` to improve performance.
 ///
 /// TODO: No-pinyin pattern optimization
 /// TODO: Anchors, `*_at`
@@ -81,15 +210,50 @@ where
     _haystack_str: PhantomData<HaystackStr>,
 }
 
+impl Debug for IbMatcher<'_, str> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IbMatcher")
+            .field("pattern", &self._pattern_string)
+            .field("starts_with", &self.starts_with)
+            .field("ends_with", &self.ends_with)
+            .field("plain", &self.plain)
+            .field("mix_lang", &self.mix_lang)
+            .finish()
+    }
+}
+
 #[bon]
 impl<'a, HaystackStr> IbMatcher<'a, HaystackStr>
 where
     HaystackStr: EncodedStr + ?Sized,
 {
+    pub fn with_config<'p>(
+        pattern: impl Into<Pattern<'p, HaystackStr>>,
+        config: MatchConfig<'a>,
+    ) -> Self
+    where
+        HaystackStr: 'p,
+    {
+        let pattern = pattern.into();
+        let builder = IbMatcher::builder(pattern)
+            .analyze(config.analyze)
+            .maybe_analyze_config(config.analyze_config)
+            .is_pattern_partial(config.is_pattern_partial)
+            .starts_with(config.starts_with)
+            .ends_with(config.ends_with)
+            .plain(config.plain)
+            .mix_lang(config.mix_lang);
+        #[cfg(feature = "pinyin")]
+        let builder = builder.maybe_pinyin(config.pinyin);
+        #[cfg(feature = "romaji")]
+        let builder = builder.maybe_romaji(config.romaji);
+        builder.build()
+    }
+
     // state_mod(vis = "pub(crate)")
     #[builder]
-    pub fn new(
-        #[builder(start_fn, into)] pattern: Pattern<'a, HaystackStr>,
+    pub fn new<'p>(
+        #[builder(start_fn, into)] pattern: Pattern<'p, HaystackStr>,
 
         /// For more advanced control over the analysis, use [`IbMatcherBuilder::analyze_config`].
         #[builder(default = false)]
@@ -144,7 +308,7 @@ where
         let pattern_s: &str = pattern_string.as_str();
         let pattern_s: &'static str = unsafe { std::mem::transmute(pattern_s) };
 
-        let pattern_string_lowercase = pattern_string.to_mono_lowercase();
+        let pattern_string_lowercase = pattern_string.to_simple_or_ascii_fold_case();
         let pattern_s_lowercase: &str = pattern_string_lowercase.as_str();
         let pattern_s_lowercase: &'static str = unsafe { std::mem::transmute(pattern_s_lowercase) };
 
@@ -282,19 +446,58 @@ where
         }
 
         // TODO: ends_with optimization
-        for (i, _c, str) in haystack.char_index_strs() {
-            if self.is_haystack_too_short(str) {
-                break;
-            }
-            if let Some(submatch) = self.sub_test::<0xFF>(&self.pattern, str, 0) {
-                return Some(Match {
-                    start: i,
-                    end: i + submatch.len,
-                    is_pattern_partial: submatch.is_pattern_partial,
-                });
+        if HaystackStr::UTF8 {
+            if self.is_haystack_too_short(haystack) {
+                return None;
             }
             if self.starts_with {
-                break;
+                return self
+                    .sub_test::<0xFF>(&self.pattern, haystack, 0)
+                    .map(|submatch| Match {
+                        start: 0,
+                        end: submatch.len,
+                        is_pattern_partial: submatch.is_pattern_partial,
+                    });
+            }
+
+            // ASCII prefilter, -30% for matcher find_ascii_25
+            let mut i = 0;
+            while let Some(m) = self
+                .ascii
+                .find_first_or_non_ascii_byte(&haystack.as_bytes()[i..])
+            {
+                i += m;
+
+                let str = unsafe { haystack.get_unchecked_from(i..) };
+                if self.is_haystack_too_short(str) {
+                    break;
+                }
+                if let Some(submatch) = self.sub_test::<0xFF>(&self.pattern, str, 0) {
+                    return Some(Match {
+                        start: i,
+                        end: i + submatch.len,
+                        is_pattern_partial: submatch.is_pattern_partial,
+                    });
+                }
+
+                let s = unsafe { str::from_utf8_unchecked(&haystack.as_bytes()[i..]) };
+                i += unsafe { s.chars().next().unwrap_unchecked() }.len_utf8();
+            }
+        } else {
+            for (i, _c, str) in haystack.char_index_strs() {
+                if self.is_haystack_too_short(str) {
+                    break;
+                }
+                if let Some(submatch) = self.sub_test::<0xFF>(&self.pattern, str, 0) {
+                    return Some(Match {
+                        start: i,
+                        end: i + submatch.len,
+                        is_pattern_partial: submatch.is_pattern_partial,
+                    });
+                }
+                if self.starts_with {
+                    break;
+                }
             }
         }
 
@@ -331,6 +534,33 @@ where
     where
         HaystackStr: 'h,
     {
+        self.test_and_try_for_each(input, &mut Some)
+    }
+
+    /// This routine tests if this pattern matches the haystack at the start, and if found, calls `f`, and returns a [`T`] if it returns `Some`.
+    ///
+    /// ## Arguments
+    /// - `f`: The [`Match`] provides access to both the byte offsets of the match and [`Match::is_pattern_partial()`].
+    ///   - `Match.start()` is guaranteed to be 0.
+    pub fn test_and_try_for_each<'h, T>(
+        &self,
+        input: impl Into<Input<'h, HaystackStr>>,
+        f: &mut impl FnMut(Match) -> Option<T>,
+    ) -> Option<T>
+    where
+        HaystackStr: 'h,
+    {
+        self.test_and_try_for_each_opt::<false, T>(input, f)
+    }
+
+    pub(crate) fn test_and_try_for_each_opt<'h, const CONF_MAYBE_ASCII: bool, T>(
+        &self,
+        input: impl Into<Input<'h, HaystackStr>>,
+        f: &mut impl FnMut(Match) -> Option<T>,
+    ) -> Option<T>
+    where
+        HaystackStr: 'h,
+    {
         let input = input.into();
         let haystack = input.haystack;
         if self.is_haystack_too_short(haystack) || self.starts_with && input.no_start {
@@ -341,20 +571,51 @@ where
                     start: 0,
                     end: 0,
                     is_pattern_partial: false,
-                });
+                })
+                .and_then(f);
             }
         }
 
-        if haystack.is_ascii() {
-            return self.ascii.test(haystack.as_bytes()).div(HaystackStr::CHAR);
+        // ASCII prefilter, -17% for regex_lita find_re
+        if HaystackStr::UTF8 {
+            let b = haystack.as_bytes()[0];
+            if b.is_ascii() && !self.ascii.test_first_byte(b) {
+                return None;
+            }
+        } else {
+            // For UTF-16 LE and UTF-32 LE:
+            // - If the first char is ASCII, the first byte is ASCII and `test_first_byte()` is correct.
+            // - If the first char is not ASCII, the first byte may be ASCII or not, `test_first_byte()` is useless.
+            // TODO: Test the first char is ASCII or not
         }
 
-        self.sub_test::<0xFF>(&self.pattern, haystack, 0)
-            .map(|submatch| Match {
+        if (!CONF_MAYBE_ASCII
+            || CONF_MAYBE_ASCII && self.plain.as_ref().is_some_and(|p| p.maybe_ascii))
+            && haystack.is_ascii()
+        {
+            return self
+                .ascii
+                .test(haystack.as_bytes())
+                .div(HaystackStr::CHAR)
+                .and_then(f);
+        }
+
+        self.sub_test_and_try_for_each::<0xFF, T>(&self.pattern, haystack, 0, &mut |submatch| {
+            f(Match {
                 start: 0,
                 end: submatch.len,
                 is_pattern_partial: submatch.is_pattern_partial,
             })
+        })
+    }
+
+    fn sub_test<const LANG: u8>(
+        &self,
+        pattern: &[PatternChar],
+        haystack: &HaystackStr,
+        matched_len: usize,
+    ) -> Option<SubMatch> {
+        self.sub_test_and_try_for_each::<LANG, SubMatch>(pattern, haystack, matched_len, &mut Some)
     }
 
     /// ## Arguments
@@ -362,12 +623,15 @@ where
     /// - `pattern`: Not empty.
     /// - `haystack`
     /// - `matched_len`: For tail-call optimization.
-    fn sub_test<const LANG: u8>(
+    /// - `f`
+    ///   - TODO: Use coroutine when stable
+    fn sub_test_and_try_for_each<const LANG: u8, T>(
         &self,
         pattern: &[PatternChar],
         haystack: &HaystackStr,
         matched_len: usize,
-    ) -> Option<SubMatch> {
+        f: &mut impl FnMut(SubMatch) -> Option<T>,
+    ) -> Option<T> {
         debug_assert!(!pattern.is_empty());
 
         // if Self::is_haystack_too_short_with_pattern(pattern, haystack) {
@@ -391,15 +655,21 @@ where
 
         if let Some(plain) = &self.plain {
             if match plain.case_insensitive {
-                true => haystack_c.to_mono_lowercase() == pattern_c.c_lowercase,
+                true => haystack_c.to_simple_or_ascii_fold_case() == pattern_c.c_lowercase,
                 false => haystack_c == pattern_c.c,
             } {
                 // If haystack_c == pattern_c, then it is impossible that pattern_c is a pinyin letter and haystack_c is a hanzi.
                 return if pattern_next.is_empty() {
                     Some(SubMatch::new(matched_len_next, false))
                         .filter(|_| !self.ends_with || haystack_next.as_bytes().is_empty())
+                        .and_then(f)
                 } else {
-                    self.sub_test::<0xFF>(pattern_next, haystack_next, matched_len_next)
+                    self.sub_test_and_try_for_each::<0xFF, T>(
+                        pattern_next,
+                        haystack_next,
+                        matched_len_next,
+                        f,
+                    )
                 };
             }
         }
@@ -427,11 +697,12 @@ where
                 unsafe { str::from_utf8_unchecked(haystack.as_bytes()) },
                 |len, romaji| {
                     let match_len_next = matched_len + len;
-                    match self.sub_test_pinyin::<2>(
+                    match self.sub_test_pinyin::<2, T>(
                         pattern,
                         unsafe { haystack.get_unchecked_from(len..) },
                         match_len_next,
                         romaji,
+                        f,
                     ) {
                         (true, Some(submatch)) => return Some(submatch),
                         (true, None) => (),
@@ -477,11 +748,12 @@ where
                     .get_pinyins_and_try_for_each(haystack_c, |pinyin| {
                         for &notation in matcher.notations_prefix_group.iter() {
                             let pinyin = pinyin.notation(notation).unwrap();
-                            match self.sub_test_pinyin::<1>(
+                            match self.sub_test_pinyin::<1, T>(
                                 pattern,
                                 haystack_next,
                                 matched_len_next,
                                 pinyin,
+                                f,
                             ) {
                                 (true, Some(submatch)) => return Some(submatch),
                                 (true, None) => (),
@@ -491,11 +763,12 @@ where
                         }
                         for &notation in matcher.notations.iter() {
                             let pinyin = pinyin.notation(notation).unwrap();
-                            match self.sub_test_pinyin::<1>(
+                            match self.sub_test_pinyin::<1, T>(
                                 pattern,
                                 haystack_next,
                                 matched_len_next,
                                 pinyin,
+                                f,
                             ) {
                                 (true, Some(submatch)) => return Some(submatch),
                                 (true, None) => (),
@@ -521,13 +794,15 @@ where
     ///
     /// ## Returns
     /// (pinyin_matched, submatch)
-    fn sub_test_pinyin<const LANG: u8>(
+    #[cfg(any(feature = "pinyin", feature = "romaji"))]
+    fn sub_test_pinyin<const LANG: u8, T>(
         &self,
         pattern: &[PatternChar],
         haystack_next: &HaystackStr,
         matched_len_next: usize,
         pinyin: &str,
-    ) -> (bool, Option<SubMatch>) {
+        f: &mut impl FnMut(SubMatch) -> Option<T>,
+    ) -> (bool, Option<T>) {
         debug_assert!(!pattern.is_empty());
         debug_assert_eq!(pinyin, pinyin.to_lowercase());
 
@@ -562,7 +837,8 @@ where
                 return (
                     true,
                     Some(SubMatch::new(matched_len_next, true))
-                        .filter(|_| !self.ends_with || haystack_next.as_bytes().is_empty()),
+                        .filter(|_| !self.ends_with || haystack_next.as_bytes().is_empty())
+                        .and_then(f),
                 );
             }
         } else if pattern_s.starts_with(pinyin) {
@@ -570,19 +846,21 @@ where
                 return (
                     true,
                     Some(SubMatch::new(matched_len_next, false))
-                        .filter(|_| !self.ends_with || haystack_next.as_bytes().is_empty()),
+                        .filter(|_| !self.ends_with || haystack_next.as_bytes().is_empty())
+                        .and_then(f),
                 );
             }
 
             if let Some(submatch) = if self.mix_lang {
-                Self::sub_test::<0xFF>
+                Self::sub_test_and_try_for_each::<0xFF, T>
             } else {
-                Self::sub_test::<LANG>
+                Self::sub_test_and_try_for_each::<LANG, T>
             }(
                 self,
                 &pattern[pinyin.chars().count()..],
                 haystack_next,
                 matched_len_next,
+                f,
             ) {
                 return (true, Some(submatch));
             }
@@ -616,7 +894,22 @@ where
     }
 }
 
-impl<'a, HaystackStr, S: ib_matcher_builder::State> IbMatcherBuilder<'a, HaystackStr, S>
+impl<'a, S: match_config_builder::State> MatchConfigBuilder<'a, S> {
+    /// A convenient setter for [`PlainMatchConfigBuilder::case_insensitive`].
+    ///
+    /// The case insensitivity of pinyin is controlled by [`PinyinMatchConfigBuilder::case_insensitive`].
+    pub fn case_insensitive(
+        self,
+        case_insensitive: bool,
+    ) -> MatchConfigBuilder<'a, match_config_builder::SetPlain<S>>
+    where
+        S::Plain: ib_matcher_builder::IsUnset,
+    {
+        self.plain(PlainMatchConfig::case_insensitive(case_insensitive))
+    }
+}
+
+impl<'a, 'p, HaystackStr, S: ib_matcher_builder::State> IbMatcherBuilder<'a, 'p, HaystackStr, S>
 where
     HaystackStr: EncodedStr + ?Sized,
 {
@@ -626,7 +919,7 @@ where
     pub fn case_insensitive(
         self,
         case_insensitive: bool,
-    ) -> IbMatcherBuilder<'a, HaystackStr, ib_matcher_builder::SetPlain<S>>
+    ) -> IbMatcherBuilder<'a, 'p, HaystackStr, ib_matcher_builder::SetPlain<S>>
     where
         S::Plain: ib_matcher_builder::IsUnset,
     {
@@ -746,6 +1039,18 @@ mod test {
         assert_match(matcher.test(u16str!("凯尔")), Some((0, 2)));
         // AsciiFirstLetter is preferred
         assert_match(matcher.test(u16str!("柯尔")), Some((0, 2)));
+    }
+
+    #[cfg(feature = "unicode")]
+    #[test]
+    fn unicode_case() {
+        let matcher = IbMatcher::builder("la vie est drôle").build();
+        assert!(matcher.is_match("LA VIE EST DRÔLE"));
+
+        let matcher = IbMatcher::builder("βίος").build();
+        assert!(matcher.is_match("βίος"));
+        assert!(matcher.is_match("Βίοσ"));
+        assert!(matcher.is_match("ΒΊΟΣ"));
     }
 
     #[test]
