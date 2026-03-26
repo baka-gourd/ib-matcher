@@ -5,6 +5,8 @@
 
 一个高性能 Rust 拼音查询、匹配库。
 
+See [Pinyin](https://en.wikipedia.org/wiki/Pinyin) for what is pinyin.
+
 - 支持以下拼音编码方案：
   - 简拼（“py”）
   - 全拼（“pinyin”）
@@ -21,7 +23,7 @@
 - 默认小写字母匹配拼音或字母，大写字母只匹配字母。
 - 支持 Unicode 辅助平面汉字。
 
-支持 C、AHK2。
+支持 [C](bindings/c/README.md)、[AHK2](bindings/ahk2/README.md)。
 
 ## Usage
 ```rust

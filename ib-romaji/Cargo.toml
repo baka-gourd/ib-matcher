@@ -1,6 +1,6 @@
 [package]
 name = "ib-romaji"
-version = "0.1.2"
+version = "0.2.1"
 edition = "2024"
 description = "A fast Japanese romanizer"
 keywords = ["romaji", "japanese", "cjk"]
@@ -9,28 +9,48 @@ authors.workspace = true
 license.workspace = true
 
 [features]
-default = ["compress-words"]
+default = [
+    "std",
+    "compress-words",
+]
 
 ## Binary size (and memory usage) -696 KiB (771 KiB if zstd is already used), romanizer build time +1.1 ms.
 compress-words = ["dep:include-bytes-zstd"]
 
+## Enable serialization/deserialization of HepburnRomanizer for caching initialization state.
+## When combined with `std`, also enables file-based caching via the builder API.
+cache = []
+
+## Enable standard library support for file-based caching.
+std = []
+
 doc = ["dep:document-features"]
 
 [dependencies]
-bon = "3"
+bon = "3.2"
 daachorse = "1"
 document-features = { version = "0.2", optional = true }
 ib-unicode = { version = "0.2", default-features = false, path = "../ib-unicode" }
 include-bytes-zstd = { version = "0.1", optional = true }
+logos = { version = "0.16", default-features = false, features = [
+    "export_derive",
+] }
 
 [[bench]]
 name = "romaji"
 harness = false
 
 [dev-dependencies]
+ib-romaji = { path = ".", features = [
+    "cache",
+] }
 aho-corasick = "1"
 criterion = "0.6"
 indexmap = "2"
+
+[[bench]]
+name = "kana"
+harness = false
 
 [[bench]]
 name = "words"
